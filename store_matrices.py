@@ -84,6 +84,9 @@ def main():
     # g: 標準化されたUnembedding行列
     g = gamma @ inv_sqrt_Cov_gamma
 
+    print(f"{gamma.shape=}")
+    print(f"{g.shape=}")
+
     # compute concept directions
     print("compute concept directions ...")
     filenames = sorted(
@@ -106,26 +109,29 @@ def main():
     )  # Unembedding空間での概念方向のベクトルを格納するテンソル
     concept_g = torch.zeros(len(filenames), d)  # 標準化空間での概念方向
 
-    count = 0
-
+    print(f"{concept_gamma.shape=}")
+    print(f"{concept_g.shape=}")
     # counter_factual pairの処理
-    for filename in filenames:
+    for i, filename in enumerate(filenames):
         base_sequences, target_sequences, base_encodings, target_encodings = (
             lrg.get_counterfactual_pairs(
                 filename, prompt_type=args.prompt_type, num_sample=int(args.num_sample)
             )
         )
+        print(f"{len(base_sequences)=}")  # len=[args.num_sample]
+        print(f"{len(target_sequences)=}")  # len=[args.num_sample]
 
         # 概念方向の計算
         mean_diff_gamma, diff_gamma = lrg.concept_direction(
-            base_sequences, target_sequences
+            base_sequences, target_sequences, gamma
         )
-        concept_gamma[count] = mean_diff_gamma
+        print(f"{mean_diff_gamma.shape=}")
+        print(f"{diff_gamma.shape=}")
+        print(f"{concept_gamma.shape=}")
+        concept_gamma[i] = mean_diff_gamma
 
-        mean_diff_g, diff_g = lrg.concept_direction(base_sequences, target_sequences)
-        concept_g[count] = mean_diff_g
-
-        count += 1
+        mean_diff_g, diff_g = lrg.concept_direction(base_sequences, target_sequences, g)
+        concept_g[i] = mean_diff_g
 
     # Save
     print("save everything ...")

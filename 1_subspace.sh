@@ -1,9 +1,9 @@
 # Experiments config
-# MODEL_PATH="meta-llama/Llama-3.2-3B-Instruct" # [meta-llama/Llama-3.1-8B-Instruct, meta-llama/Llama-2-7b-hf, meta-llama/Llama-3.2-3B-Instruct]
-# DATASET_TYPE="valuenet" # [valuenet]
-# CONCEPT_DIRECTION="pos2neg" # [pos2neg, pos2neutral]
-# NORM_TYPE="norm_sentence_structure" # [base, norm_sentence_structure, norm_topic]
-# PROMPT_TYPE="bare"  # [bare, reflection, analysis, implicit, explicit]
+MODEL_PATH="meta-llama/Llama-3.2-3B-Instruct" # [meta-llama/Llama-3.1-8B-Instruct, meta-llama/Llama-2-7b-hf, meta-llama/Llama-3.2-3B-Instruct]
+DATASET_TYPE="valuenet" # [valuenet]
+CONCEPT_DIRECTION="pos2neg" # [pos2neg, pos2neutral]
+NORM_TYPE="norm_sentence_structure" # [base, norm_sentence_structure, norm_topic]
+PROMPT_TYPE="bare"  # [bare, reflection, analysis, implicit, explicit]
 
 # Basic config
 MODEL_NAME=$(echo $MODEL_PATH | cut -d'/' -f2 | tr '[:upper:]' '[:lower:]')
@@ -42,7 +42,7 @@ python 1_subspace.py \
     --generation_random_output_path $GENERATION_RANDOM_OUTPUT_PATH \
     --generation_counterfactual_output_path $GENERATION_COUNTERFACTUAL_OUTPUT_PATH
 
-echo "=== Draw Heatmap ... ==="
-python 2_heatmap.py \
-    --matrices_path $SAVED_DIR \
-    --analyzed_figure_path $ANALYZED_FIGURE_DIR
+# echo "=== Draw Heatmap ... ==="
+# python 2_heatmap.py \
+#     --matrices_path $SAVED_DIR \
+#     --analyzed_figure_path $ANALYZED_FIGURE_DIR

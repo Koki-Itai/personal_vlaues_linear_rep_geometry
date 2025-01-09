@@ -103,31 +103,31 @@ def get_counterfactual_pairs(filename, prompt_type, num_sample=1000):
     return base_sequences, target_sequences, base_encodings, target_encodings
 
 
-def concept_direction(base_sequences, target_sequences):
-    """単語のみ（元論文の実装）"""
-    #     base_data = data[base_ind,]
-    #     target_data = data[target_ind,]
-
-    #     diff_data = target_data - base_data
-    #     mean_diff_data = torch.mean(diff_data, dim=0)
-    #     mean_diff_data = mean_diff_data / torch.norm(mean_diff_data)
-
-    #     return mean_diff_data, diff_data
-
-    """トークン列に対応"""
+def concept_direction(base_sequences, target_sequences, unembedding):
+    """
+    【トークン列に対応】
+    unembeddingはgやgammaが入る．元論文の実装ではdataという命名．
+    """
     print("Computing base embeddings...")
-    base_embeddings = get_embeddings(base_sequences)
+    base_embeddings = get_embeddings(text_batch=base_sequences)
+    base_logits = torch.matmul(base_embeddings, unembedding.T)
+    print(f"{base_logits.shape=}") # torch.Size([1000, 128256])
 
     print("Computing target embeddings...")
-    target_embeddings = get_embeddings(target_sequences)
+    target_embeddings = get_embeddings(text_batch=target_sequences)
+    target_logits = torch.matmul(target_embeddings, unembedding.T)
+    print(f"{target_logits.shape=}") # torch.Size([1000, 128256])
 
     print("Calculating concept direction...")
-    # diff_vectors = target_embeddings - base_embeddings
-    diff_vectors = base_embeddings - target_embeddings
-    mean_diff = torch.mean(diff_vectors, dim=0)
-    concept_vector = mean_diff / torch.norm(mean_diff)
+    # diff_vectors = base_embeddings - target_embeddings
+    # mean_diff = torch.mean(diff_vectors, dim=0)
+    # mean_diff_data = mean_diff / torch.norm(mean_diff)
+    # return mean_diff_data, diff_vectors
 
-    return concept_vector, diff_vectors
+    diff_unembedding = base_logits - target_logits
+    mean_diff = torch.mean(diff_unembedding, dim=0)
+    mean_diff_unembedding = mean_diff / torch.norm(mean_diff)
+    return mean_diff_unembedding, mean_diff
 
 
 def get_embeddings(text_batch, batch_size=4):
@@ -162,8 +162,7 @@ def get_embeddings(text_batch, batch_size=4):
             input_ids = encoded.input_ids.to(device)
             attention_mask = encoded.attention_mask.to(device)
 
-            torch.cuda.empty_cache()
-
+            # 各トークンのlast_hidden_stateを取得して平均化することでトークン列の埋め込みを作る
             with torch.no_grad():
                 outputs = model(
                     input_ids, attention_mask=attention_mask, output_hidden_states=True
@@ -179,6 +178,20 @@ def get_embeddings(text_batch, batch_size=4):
                 del outputs, last_hidden_state, masked_hidden_state, sum_hidden_state
                 torch.cuda.empty_cache()
 
+            # シーケンスの最終トークンにおけるlast_hidden_stateを用いて埋め込みを作る
+            # with torch.no_grad():
+            #     outputs = model(
+            #         input_ids, attention_mask=attention_mask, output_hidden_states=True
+            #     )
+            #     last_hidden_state = outputs.hidden_states[-1]
+            #     last_token_indices = attention_mask.sum(dim=1) - 1
+            #     batch_embeddings = last_hidden_state[
+            #         torch.arange(last_hidden_state.size(0)), last_token_indices
+            #     ]
+            # all_embeddings.append(batch_embeddings.cpu())
+            # del outputs, last_hidden_state
+            # torch.cuda.empty_cache()
+
     except RuntimeError as e:
         if "out of memory" in str(e):
             print(
@@ -190,86 +203,6 @@ def get_embeddings(text_batch, batch_size=4):
     combined_embeddings = torch.cat(all_embeddings, dim=0).to(device)
     return combined_embeddings
 
-
-# def get_embeddings(text_batch, batch_size=4):
-#     """
-#     Get embeddings for text sequences in batches with progress visualization.
-
-#     Args:
-#         text_batch: List of input texts
-#         batch_size: Number of texts to process at once
-
-#     Returns:
-#         torch.Tensor: Embeddings for all input texts
-#     """
-#     global model, tokenizer
-#     if model is None or tokenizer is None:
-#         load_model()
-
-#     device = next(model.parameters()).device
-#     tokenizer.pad_token = tokenizer.eos_token
-#     all_embeddings = []
-
-#     # Calculate total number of batches
-#     total_batches = (len(text_batch) + batch_size - 1) // batch_size
-
-#     # Create progress bar
-#     pbar = tqdm(
-#         range(0, len(text_batch), batch_size),
-#         total=total_batches,
-#         desc="Processing embeddings",
-#         unit="batch",
-#     )
-#     try:
-#         for i in pbar:
-#             batch_texts = text_batch[i : i + batch_size]
-
-#             # Update progress bar with batch size info
-#             pbar.set_postfix(
-#                 {
-#                     "batch_size": len(batch_texts),
-#                     "processed": min(i + batch_size, len(text_batch)),
-#                 }
-#             )
-
-#             encoded = tokenizer(
-#                 batch_texts,
-#                 padding=True,
-#                 truncation=True,
-#                 return_tensors="pt",
-#                 return_attention_mask=True,
-#                 max_length=128,
-#             )
-
-#             input_ids = encoded.input_ids.to(device)
-#             attention_mask = encoded.attention_mask.to(device)
-
-#             torch.cuda.empty_cache()
-
-#             with torch.no_grad():
-#                 outputs = model(
-#                     input_ids, attention_mask=attention_mask, output_hidden_states=True
-#                 )
-
-#                 last_hidden_state = outputs.hidden_states[-1]
-#                 masked_hidden_state = last_hidden_state * attention_mask.unsqueeze(-1)
-#                 sum_hidden_state = masked_hidden_state.sum(dim=1)
-#                 count_tokens = attention_mask.sum(dim=1).unsqueeze(-1)
-#                 batch_embeddings = sum_hidden_state / count_tokens
-
-#                 all_embeddings.append(batch_embeddings.cpu())
-
-#                 del outputs, last_hidden_state, masked_hidden_state, sum_hidden_state
-#                 torch.cuda.empty_cache()
-
-#     except RuntimeError as e:
-#         if "out of memory" in str(e):
-#             print(f"WARNING: Out of memory error occurred. Try reducing batch_size (current: {batch_size})")
-#             torch.cuda.empty_cache()
-#         raise e
-
-#     combined_embeddings = torch.cat(all_embeddings, dim=0).to(device)
-#     return combined_embeddings
 
 
 ####### Experiment 1: subspace #######
