@@ -103,34 +103,33 @@ def get_counterfactual_pairs(filename, prompt_type, num_sample=1000):
     return base_sequences, target_sequences, base_encodings, target_encodings
 
 
-def concept_direction(base_sequences, target_sequences, unembedding):
+def concept_direction(base_embeddings, target_embeddings, unembedding):
     """
     【トークン列に対応】
     unembeddingはgやgammaが入る．元論文の実装ではdataという命名．
     """
-    print("Computing base embeddings...")
-    base_embeddings = get_embeddings(text_batch=base_sequences)
-    base_logits = torch.matmul(base_embeddings, unembedding.T)
-    print(f"{base_logits.shape=}") # torch.Size([1000, 128256])
 
-    print("Computing target embeddings...")
-    target_embeddings = get_embeddings(text_batch=target_sequences)
-    target_logits = torch.matmul(target_embeddings, unembedding.T)
-    print(f"{target_logits.shape=}") # torch.Size([1000, 128256])
+    print("Computing base unembeddings...")
+    base_unembedding_per_sequense = [torch.mean(unembedding[base_embedding, ], dim=0) for base_embedding in base_embeddings]
+    base_unembedding_per_sequense = torch.stack(base_unembedding_per_sequense)
+    # base_unembedding = torch.mean(base_unembedding_per_sequense, dim=0)
+    # print(f"{base_unembedding_per_sequense.shape=}")
+    # print(f"{base_unembedding.shape=}")
 
-    print("Calculating concept direction...")
-    # diff_vectors = base_embeddings - target_embeddings
-    # mean_diff = torch.mean(diff_vectors, dim=0)
-    # mean_diff_data = mean_diff / torch.norm(mean_diff)
-    # return mean_diff_data, diff_vectors
+    print("Computing target unembeddings...")
+    target_unembedding_per_sequense = [torch.mean(unembedding[target_embedding, ], dim=0) for target_embedding in target_embeddings]
+    target_unembedding_per_sequense = torch.stack(target_unembedding_per_sequense)
+    # target_unembedding = torch.mean(target_unembedding_per_sequense, dim=0)
+    # print(f"{target_unembedding_per_sequense.shape=}")
+    # print(f"{target_unembedding.shape=}")
 
-    diff_unembedding = base_logits - target_logits
-    mean_diff = torch.mean(diff_unembedding, dim=0)
-    mean_diff_unembedding = mean_diff / torch.norm(mean_diff)
-    return mean_diff_unembedding, mean_diff
+    diff_unembedding = base_unembedding_per_sequense - target_unembedding_per_sequense
+    mean_diff_unembedding = diff_unembedding / torch.norm(diff_unembedding)
+
+    return mean_diff_unembedding, diff_unembedding
 
 
-def get_embeddings(text_batch, batch_size=4):
+def get_embeddings(texts, batch_size=4, embedding_strategy="mean"):
     global model, tokenizer
     if model is None or tokenizer is None:
         load_model()
@@ -139,16 +138,16 @@ def get_embeddings(text_batch, batch_size=4):
     tokenizer.pad_token = tokenizer.eos_token
     all_embeddings = []
 
-    total_batches = (len(text_batch) + batch_size - 1) // batch_size
+    total_batches = (len(texts) + batch_size - 1) // batch_size
     pbar = tqdm(
-        range(0, len(text_batch), batch_size),
+        range(0, len(texts), batch_size),
         total=total_batches,
         desc="Processing embeddings",
         unit="batch",
     )
     try:
         for i in pbar:
-            batch_texts = text_batch[i : i + batch_size]
+            batch_texts = texts[i : i + batch_size]
 
             encoded = tokenizer(
                 batch_texts,
@@ -162,35 +161,36 @@ def get_embeddings(text_batch, batch_size=4):
             input_ids = encoded.input_ids.to(device)
             attention_mask = encoded.attention_mask.to(device)
 
-            # 各トークンのlast_hidden_stateを取得して平均化することでトークン列の埋め込みを作る
-            with torch.no_grad():
-                outputs = model(
-                    input_ids, attention_mask=attention_mask, output_hidden_states=True
-                )
-                last_hidden_state = outputs.hidden_states[-1]
-                masked_hidden_state = last_hidden_state * attention_mask.unsqueeze(-1)
-                sum_hidden_state = masked_hidden_state.sum(dim=1)
-                count_tokens = attention_mask.sum(dim=1).unsqueeze(-1)
-                batch_embeddings = sum_hidden_state / count_tokens
+            if embedding_strategy == "mean":
+                # 各トークンのlast_hidden_stateを取得して平均化することでトークン列の埋め込みを作る
+                with torch.no_grad():
+                    outputs = model(
+                        input_ids, attention_mask=attention_mask, output_hidden_states=True
+                    )
+                    last_hidden_state = outputs.hidden_states[-1]
+                    masked_hidden_state = last_hidden_state * attention_mask.unsqueeze(-1)
+                    sum_hidden_state = masked_hidden_state.sum(dim=1)
+                    count_tokens = attention_mask.sum(dim=1).unsqueeze(-1)
+                    batch_embeddings = sum_hidden_state / count_tokens
 
-                all_embeddings.append(batch_embeddings.cpu())
+                    all_embeddings.append(batch_embeddings.cpu())
 
-                del outputs, last_hidden_state, masked_hidden_state, sum_hidden_state
-                torch.cuda.empty_cache()
-
-            # シーケンスの最終トークンにおけるlast_hidden_stateを用いて埋め込みを作る
-            # with torch.no_grad():
-            #     outputs = model(
-            #         input_ids, attention_mask=attention_mask, output_hidden_states=True
-            #     )
-            #     last_hidden_state = outputs.hidden_states[-1]
-            #     last_token_indices = attention_mask.sum(dim=1) - 1
-            #     batch_embeddings = last_hidden_state[
-            #         torch.arange(last_hidden_state.size(0)), last_token_indices
-            #     ]
-            # all_embeddings.append(batch_embeddings.cpu())
-            # del outputs, last_hidden_state
-            # torch.cuda.empty_cache()
+                    del outputs, last_hidden_state, masked_hidden_state, sum_hidden_state
+            elif embedding_strategy == "last":
+                # シーケンスの最終トークンにおけるlast_hidden_stateを用いて埋め込みを作る
+                with torch.no_grad():
+                    outputs = model(
+                        input_ids, attention_mask=attention_mask, output_hidden_states=True
+                    )
+                    last_hidden_state = outputs.hidden_states[-1]
+                    last_token_indices = attention_mask.sum(dim=1) - 1
+                    batch_embeddings = last_hidden_state[
+                        torch.arange(last_hidden_state.size(0)), last_token_indices
+                    ]
+                    all_embeddings.append(batch_embeddings.cpu())
+                    del outputs, last_hidden_state
+            else:
+                raise ValueError(f"Invalid embedding_strategy: {embedding_strategy}")
 
     except RuntimeError as e:
         if "out of memory" in str(e):
@@ -200,13 +200,13 @@ def get_embeddings(text_batch, batch_size=4):
             torch.cuda.empty_cache()
         raise e
 
-    combined_embeddings = torch.cat(all_embeddings, dim=0).to(device)
-    return combined_embeddings
+    embeddings = torch.cat(all_embeddings, dim=0).to(device)
+    return embeddings
 
 
 
 ####### Experiment 1: subspace #######
-def inner_product_loo(base_sequences, target_sequences, data):
+def inner_product_loo(base_embeddings, target_embeddings, unembedding):
     """単語に対応（元論文の実装）"""
     #     base_data = data[base_ind,]
     #     target_data = data[target_ind,]
@@ -223,10 +223,20 @@ def inner_product_loo(base_sequences, target_sequences, data):
     #     return torch.stack(products), diff_data
 
     """トークン列に対応"""
-    base_data = get_embeddings(base_sequences)
-    target_data = get_embeddings(target_sequences)
+    print("Computing base unembeddings...")
+    base_unembedding_per_sequense = [torch.mean(unembedding[base_embedding, ], dim=0) for base_embedding in base_embeddings]
+    base_unembedding_per_sequense = torch.stack(base_unembedding_per_sequense)
+    # base_unembedding = torch.mean(base_unembedding_per_sequense, dim=0)
+    # print(f"{base_unembedding_per_sequense.shape=}")
+    # print(f"{base_unembedding.shape=}")
 
-    diff_data = target_data - base_data
+    print("Computing target unembeddings...")
+    target_unembedding_per_sequense = [torch.mean(unembedding[target_embedding, ], dim=0) for target_embedding in target_embeddings]
+    target_unembedding_per_sequense = torch.stack(target_unembedding_per_sequense)
+    # target_unembedding = torch.mean(target_unembedding_per_sequense, dim=0)
+
+    diff_data = base_unembedding_per_sequense - target_unembedding_per_sequense
+    print(f"{diff_data.shape=}") # (num_samples, hidden_dim)
 
     # Leave-One-Out法による内積計算
     products = []
@@ -254,6 +264,8 @@ def show_histogram_LOO(
     n_plots = concept.shape[0]
     cols = min(cols, n_plots)
     rows = (n_plots + cols - 1) // cols
+
+    print(f"{n_plots=}, {cols=}, {rows=}")
 
     fig_height = 6 * rows
     fig_width = 5 * cols

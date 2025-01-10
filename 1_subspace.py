@@ -256,7 +256,7 @@ if __name__ == "__main__":
             filename, prompt_type=args.prompt_type, num_sample=num_sample
         )
         inner_product_LOO, diff_data = lrg.inner_product_loo(
-            concept_sequences, non_concept_sequences, g
+            concept_encodings, non_concept_encodings, g
         )
         inner_product_with_counterfactual_pairs_g_LOO.append(inner_product_LOO)
         count += 1
@@ -281,19 +281,29 @@ if __name__ == "__main__":
                 max_save_step=10,
             )
 
-    # Get embeddings and calculate differences for random pairs
+    # Compute Random Pairs
     print("Computing embeddings for random pairs...")
-    random_concept_embeddings = lrg.get_embeddings(
-        random_concept_sequences, batch_size=2
+    (
+        random_base_sequences,
+        random_target_sequences,
+        random_base_encodings,
+        random_target_encodings,
+    ) = lrg.get_counterfactual_pairs(
+        args.random_txt_path, prompt_type=args.prompt_type, num_sample=num_sample
     )
-    random_non_concept_embeddings = lrg.get_embeddings(
-        random_non_concept_sequences, batch_size=2
+    print(f"{len(random_base_encodings)=}, {len(random_target_encodings)=}")
+    # len(random_base_encodings)=1000, len(random_target_encodings)=1000
+    random_mean_diff_unembedding, random_diff_unembedding = lrg.concept_direction(
+        random_base_encodings, random_target_encodings, g
     )
-    random_pairs_g = random_non_concept_embeddings - random_concept_embeddings
 
+    print(f"{len(inner_product_with_counterfactual_pairs_g_LOO)=}") # 10
+    print(f"{random_mean_diff_unembedding.shape=}") # torch.Size([3072])
+    print(f"{concept_g.shape=}") # torch.Size([10, 3072])
+    print(f"{concept_names=}")
     lrg.show_histogram_LOO(
         inner_product_with_counterfactual_pairs_g_LOO,
-        random_pairs_g,
+        random_diff_unembedding,
         concept_g,
         concept_names,
         fig_name="g",

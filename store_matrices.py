@@ -109,8 +109,8 @@ def main():
     )  # Unembedding空間での概念方向のベクトルを格納するテンソル
     concept_g = torch.zeros(len(filenames), d)  # 標準化空間での概念方向
 
-    print(f"{concept_gamma.shape=}")
-    print(f"{concept_g.shape=}")
+    print(f"[Def]: {concept_gamma.shape=}")
+    print(f"[Def]: {concept_g.shape=}")
     # counter_factual pairの処理
     for i, filename in enumerate(filenames):
         base_sequences, target_sequences, base_encodings, target_encodings = (
@@ -120,17 +120,19 @@ def main():
         )
         print(f"{len(base_sequences)=}")  # len=[args.num_sample]
         print(f"{len(target_sequences)=}")  # len=[args.num_sample]
+        print(f"{len(base_encodings)=}")
+        print(f"{len(target_encodings)=}")
 
         # 概念方向の計算
         mean_diff_gamma, diff_gamma = lrg.concept_direction(
-            base_sequences, target_sequences, gamma
+            base_encodings, target_encodings, gamma
         )
         print(f"{mean_diff_gamma.shape=}")
         print(f"{diff_gamma.shape=}")
         print(f"{concept_gamma.shape=}")
         concept_gamma[i] = mean_diff_gamma
 
-        mean_diff_g, diff_g = lrg.concept_direction(base_sequences, target_sequences, g)
+        mean_diff_g, diff_g = lrg.concept_direction(base_encodings, target_encodings, g)
         concept_g[i] = mean_diff_g
 
     # Save

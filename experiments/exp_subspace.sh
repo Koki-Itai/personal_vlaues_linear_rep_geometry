@@ -10,10 +10,6 @@ CONCEPT_DIRECTIONS=("pos2neg" "pos2neutral")
 NORM_TYPES=("base" "norm_sentence_structure")
 PROMPT_TYPES=("analysis" "topic" "bare" "theme" "reflection" "implicit" "explicit" )
 
-# LOG_DIR="experiment_logs"
-# mkdir -p $LOG_DIR
-
-# TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 
 run_experiment() {
     local model_path=$1
