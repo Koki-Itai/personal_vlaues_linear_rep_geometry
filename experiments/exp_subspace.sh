@@ -8,7 +8,7 @@ MODEL_PATHS=("meta-llama/Llama-3.2-3B-Instruct" "meta-llama/Llama-3.1-8B-Instruc
 DATASET_TYPES=("valuenet")
 CONCEPT_DIRECTIONS=("pos2neg" "pos2neutral")
 NORM_TYPES=("base" "norm_sentence_structure")
-PROMPT_TYPES=("analysis" "topic" "bare" "theme" "reflection" "implicit" "explicit" )
+PROMPT_TYPES=("analysis" "topic" "bare" "theme" "reflection" "implicit" "explicit")
 
 
 run_experiment() {
@@ -18,15 +18,12 @@ run_experiment() {
     local norm_type=$4
     local prompt_type=$5
 
-    # local log_file="${LOGDIR}/experiment${TIMESTAMP}_${modelpath##*/}${datasettype}${conceptdirection}${normtype}${prompt_type}.log"
-
     echo "* ===== Running experiment with configuration: ===== "
     echo "Model: $model_path"
     echo "Dataset: $dataset_type"
     echo "Concept Direction: $concept_direction"
     echo "Norm Type: $norm_type"
     echo "Prompt Type: $prompt_type"
-    # echo "Log file: $log_file"
     echo " ================================================= *"
 
     export MODEL_PATH=$model_path
@@ -59,4 +56,3 @@ for model_path in "${MODEL_PATHS[@]}"; do
 done
 
 echo "All experiments completed!"
-# echo "Logs are available in: $LOG_DIR"

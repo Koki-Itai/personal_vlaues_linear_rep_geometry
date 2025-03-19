@@ -103,27 +103,23 @@ def get_counterfactual_pairs(filename, prompt_type, num_sample=1000):
     return base_sequences, target_sequences, base_encodings, target_encodings
 
 
-def concept_direction(base_embeddings, target_embeddings, unembedding):
+def concept_direction(base_sequences, target_sequences, base_encodings, target_encodings, unembedding):
     """
     【トークン列に対応】
     unembeddingはgやgammaが入る．元論文の実装ではdataという命名．
     """
+    # Vocabの行列で概念方向計算
+    print("Computing base hidden states...")
+    base_hidden = get_embeddings(base_sequences) # (num_sample, hidden_dim)
+    print("Computing target hidden states...")
+    target_hidden = get_embeddings(target_sequences) # (num_sample, hidden_dim)
 
-    print("Computing base unembeddings...")
-    base_unembedding_per_sequense = [torch.mean(unembedding[base_embedding, ], dim=0) for base_embedding in base_embeddings]
-    base_unembedding_per_sequense = torch.stack(base_unembedding_per_sequense)
-    # base_unembedding = torch.mean(base_unembedding_per_sequense, dim=0)
-    # print(f"{base_unembedding_per_sequense.shape=}")
-    # print(f"{base_unembedding.shape=}")
+    print("Computing unembeddings...")
+    # 入力表現をUnembedding空間に写像
+    base_unembeding = base_hidden @ unembedding.T # [num_sample, vocab_size]
+    target_unembedding = target_hidden @ unembedding.T # [num_sample, vocab_size]
 
-    print("Computing target unembeddings...")
-    target_unembedding_per_sequense = [torch.mean(unembedding[target_embedding, ], dim=0) for target_embedding in target_embeddings]
-    target_unembedding_per_sequense = torch.stack(target_unembedding_per_sequense)
-    # target_unembedding = torch.mean(target_unembedding_per_sequense, dim=0)
-    # print(f"{target_unembedding_per_sequense.shape=}")
-    # print(f"{target_unembedding.shape=}")
-
-    diff_unembedding = base_unembedding_per_sequense - target_unembedding_per_sequense
+    diff_unembedding = base_unembeding - target_unembedding
     mean_diff_unembedding = diff_unembedding / torch.norm(diff_unembedding)
 
     return mean_diff_unembedding, diff_unembedding
@@ -206,49 +202,29 @@ def get_embeddings(texts, batch_size=4, embedding_strategy="mean"):
 
 
 ####### Experiment 1: subspace #######
-def inner_product_loo(base_embeddings, target_embeddings, unembedding):
-    """単語に対応（元論文の実装）"""
-    #     base_data = data[base_ind,]
-    #     target_data = data[target_ind,]
+def inner_product_loo(base_sequences, target_sequences, base_encodings, target_encodings, unembedding):
+    print("Computing base hidden states...")
+    base_hidden = get_embeddings(base_sequences)
+    print("Computing target hidden states...")
+    target_hidden = get_embeddings(target_sequences)
 
-    #     diff_data = target_data - base_data
-    #     products = []
-    #     for i in range(diff_data.shape[0]):
-    #         mask = torch.ones(diff_data.shape[0], dtype=bool)
-    #         mask[i] = False
-    #         loo_diff = diff_data[mask]
-    #         mean_diff_data = torch.mean(loo_diff, dim=0)
-    #         loo_mean = mean_diff_data / torch.norm(mean_diff_data)
-    #         products.append(loo_mean @ diff_data[i])
-    #     return torch.stack(products), diff_data
+    base_unembeding = base_hidden @ unembedding.T
+    target_unembedding = target_hidden @ unembedding.T
 
-    """トークン列に対応"""
-    print("Computing base unembeddings...")
-    base_unembedding_per_sequense = [torch.mean(unembedding[base_embedding, ], dim=0) for base_embedding in base_embeddings]
-    base_unembedding_per_sequense = torch.stack(base_unembedding_per_sequense)
-    # base_unembedding = torch.mean(base_unembedding_per_sequense, dim=0)
-    # print(f"{base_unembedding_per_sequense.shape=}")
-    # print(f"{base_unembedding.shape=}")
-
-    print("Computing target unembeddings...")
-    target_unembedding_per_sequense = [torch.mean(unembedding[target_embedding, ], dim=0) for target_embedding in target_embeddings]
-    target_unembedding_per_sequense = torch.stack(target_unembedding_per_sequense)
-    # target_unembedding = torch.mean(target_unembedding_per_sequense, dim=0)
-
-    diff_data = base_unembedding_per_sequense - target_unembedding_per_sequense
-    print(f"{diff_data.shape=}") # (num_samples, hidden_dim)
+    diff_unembedding = base_unembeding - target_unembedding
+    print(f"{diff_unembedding.shape=}") # (num_samples, vocab_size)
 
     # Leave-One-Out法による内積計算
     products = []
-    for i in range(diff_data.shape[0]):
-        mask = torch.ones(diff_data.shape[0], dtype=torch.bool, device=diff_data.device)
+    for i in range(diff_unembedding.shape[0]):
+        mask = torch.ones(diff_unembedding.shape[0], dtype=torch.bool, device=diff_unembedding.device)
         mask[i] = False
-        loo_diff = diff_data[mask]
-        mean_diff_data = torch.mean(loo_diff, dim=0)
-        loo_mean = mean_diff_data / torch.norm(mean_diff_data)
-        products.append(loo_mean @ diff_data[i])
+        loo_diff = diff_unembedding[mask]
+        mean_diff_unembedding = torch.mean(loo_diff, dim=0)  # 対象以外のデータの平均
+        loo_mean = mean_diff_unembedding / torch.norm(mean_diff_unembedding)  # 正規化
+        products.append(loo_mean @ diff_unembedding[i])  # 対象の表現と，対象以外の平均表現の内積 → これが一貫して正の値ならばcounterfactual pairsは線形
 
-    return torch.stack(products), diff_data
+    return torch.stack(products), diff_unembedding
 
 
 def show_histogram_LOO(
@@ -265,8 +241,6 @@ def show_histogram_LOO(
     cols = min(cols, n_plots)
     rows = (n_plots + cols - 1) // cols
 
-    print(f"{n_plots=}, {cols=}, {rows=}")
-
     fig_height = 6 * rows
     fig_width = 5 * cols
     fig = plt.figure(figsize=(fig_width, fig_height))
@@ -281,6 +255,7 @@ def show_histogram_LOO(
         if i < n_plots:
             target = inner_product_with_counterfactual_pairs_LOO[i]
             baseline = random_pairs @ concept[i]
+            print(f"{target.shape=}, {baseline.shape=}")
 
             axs[i].hist(
                 baseline.cpu().numpy(),

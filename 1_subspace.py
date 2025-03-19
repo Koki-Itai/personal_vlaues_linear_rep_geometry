@@ -40,6 +40,7 @@ def parse_args():
         help="Maximum number of tokens to generate",
     )
     parser.add_argument("--model_path", type=str)
+    parser.add_argument("--device_id", type=int)
 
     return parser.parse_args()
 
@@ -197,10 +198,10 @@ if __name__ == "__main__":
     logger.addHandler(handler)
 
     warnings.filterwarnings("ignore")
-    device = torch.device("cuda:0")
+    device = torch.device(f"cuda:{args.device_id}")
 
     # Load model and tokenizer from linear_rep_geometry
-    lrg.load_model(model_path=args.model_path)
+    lrg.load_model(model_path=args.model_path, device_id=args.device_id)
     model = lrg.model
     tokenizer = lrg.tokenizer
 
@@ -257,7 +258,7 @@ if __name__ == "__main__":
         )
         inner_product_LOO, diff_data = lrg.inner_product_loo(
             concept_encodings, non_concept_encodings, g
-        )
+        ) # inner_product_LOO: torch.Size([num_sample]), diff_data: torch.Size([num_sample, vocab_size])
         inner_product_with_counterfactual_pairs_g_LOO.append(inner_product_LOO)
         count += 1
 

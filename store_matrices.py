@@ -41,6 +41,7 @@ def parse_args():
         help="Directory to save output matrices",
     )
     parser.add_argument("--prompt_type", type=str, required=True)
+    parser.add_argument("--device_id", type=int, required=True)
 
     return parser.parse_args()
 
@@ -48,13 +49,11 @@ def parse_args():
 def main():
     args = parse_args()
 
-    device = torch.device("cuda:0")
-
     os.makedirs(args.matrices_save_dir, exist_ok=True)
 
     # init and load model
     print(f"Loading model: {args.model_path}")
-    lrg.load_model(args.model_path)
+    lrg.load_model(args.model_path, device_id=args.device_id)
 
     # load unembedding vectors
     print("load unembdding vectors ...")
@@ -105,14 +104,15 @@ def main():
 
     # 概念方向ベクトルの初期化
     concept_gamma = torch.zeros(
-        len(filenames), d
+        len(filenames), W
     )  # Unembedding空間での概念方向のベクトルを格納するテンソル
-    concept_g = torch.zeros(len(filenames), d)  # 標準化空間での概念方向
+    concept_g = torch.zeros(len(filenames), W)  # 標準化空間での概念方向
 
     print(f"[Def]: {concept_gamma.shape=}")
     print(f"[Def]: {concept_g.shape=}")
     # counter_factual pairの処理
     for i, filename in enumerate(filenames):
+        print(f"=== Processing {filename} ... ===")
         base_sequences, target_sequences, base_encodings, target_encodings = (
             lrg.get_counterfactual_pairs(
                 filename, prompt_type=args.prompt_type, num_sample=int(args.num_sample)
@@ -125,15 +125,26 @@ def main():
 
         # 概念方向の計算
         mean_diff_gamma, diff_gamma = lrg.concept_direction(
-            base_encodings, target_encodings, gamma
+            base_sequences=base_sequences,
+            target_sequences=target_sequences,
+            base_encodings=base_encodings,
+            target_encodings=target_encodings,
+            unembedding=gamma
         )
         print(f"{mean_diff_gamma.shape=}")
         print(f"{diff_gamma.shape=}")
         print(f"{concept_gamma.shape=}")
-        concept_gamma[i] = mean_diff_gamma
 
-        mean_diff_g, diff_g = lrg.concept_direction(base_encodings, target_encodings, g)
-        concept_g[i] = mean_diff_g
+        concept_gamma[i] = torch.mean(mean_diff_gamma, dim=0) # 概念方向の平均: [d]
+
+        mean_diff_g, diff_g = lrg.concept_direction(
+            base_sequences=base_sequences,
+            target_sequences=target_sequences,
+            base_encodings=base_encodings,
+            target_encodings=target_encodings,
+            unembedding=g
+        ) # mean_diff_g: [filenum, d]
+        concept_g[i] = torch.mean(mean_diff_g, dim=0) # 概念方向の平均: [d]
 
     # Save
     print("save everything ...")
